@@ -144,7 +144,6 @@ func NotFound(w http.ResponseWriter, resource string) {
 // Unauthorized 401未授权响应
 func Unauthorized(w http.ResponseWriter, msg string) {
 	resp := &HttpError{
-	resp := &HttpError{
 		Code:        errorx.ErrCodeAuth,
 		Description: msg,
 		Solution:    "请先登录或检查认证信息",
