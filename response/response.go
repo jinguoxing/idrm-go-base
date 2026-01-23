@@ -93,7 +93,8 @@ func ErrorWithData(w http.ResponseWriter, code int, msg string, data interface{}
 }
 
 // ErrorDetailed 详细错误响应（增强版）
-func ErrorDetailed(w http.ResponseWriter, code string, description string, solution string, cause string, detail interface{}) {
+// ErrorDetailed 详细错误响应（增强版）
+func ErrorDetailed(w http.ResponseWriter, code int, description string, solution string, cause string, detail interface{}) {
 	resp := &HttpError{
 		Code:        code,
 		Description: description,
@@ -103,18 +104,15 @@ func ErrorDetailed(w http.ResponseWriter, code string, description string, solut
 	}
 
 	statusCode := http.StatusBadRequest
-	// 根据错误码前缀判断HTTP状态码
-	if len(code) > 0 {
-		switch code[len(code)-3:] {
-		case "404":
-			statusCode = http.StatusNotFound
-		case "403":
-			statusCode = http.StatusForbidden
-		case "401":
-			statusCode = http.StatusUnauthorized
-		case "500":
-			statusCode = http.StatusInternalServerError
-		}
+	// 简单的状态码映射（可选，根据需要扩展）
+	if code == errorx.ErrCodeNotFound {
+		statusCode = http.StatusNotFound
+	} else if code == errorx.ErrCodePermissionDeny || code == errorx.ErrCodeForbidden {
+		statusCode = http.StatusForbidden
+	} else if code == errorx.ErrCodeUnauthorized {
+		statusCode = http.StatusUnauthorized
+	} else if code == errorx.ErrCodeSystem {
+		statusCode = http.StatusInternalServerError
 	}
 
 	WriteJSON(w, statusCode, resp)
@@ -146,7 +144,8 @@ func NotFound(w http.ResponseWriter, resource string) {
 // Unauthorized 401未授权响应
 func Unauthorized(w http.ResponseWriter, msg string) {
 	resp := &HttpError{
-		Code:       errorx.ErrCodeAuth
+	resp := &HttpError{
+		Code:        errorx.ErrCodeAuth,
 		Description: msg,
 		Solution:    "请先登录或检查认证信息",
 		Cause:       "未提供有效的认证信息",
