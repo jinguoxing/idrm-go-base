@@ -2,11 +2,19 @@ package response
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
+	"errors"
+
 	"github.com/jinguoxing/idrm-go-base/errorx"
+	"github.com/zeromicro/go-zero/rest/httpx"
 )
+
+func InitErrorHandler() {
+	httpx.SetErrorHandler(func(err error) (int, interface{}) {
+		return http.StatusOK, buildHttpError(err)
+	})
+}
 
 // HttpResponse 统一HTTP响应结构
 type HttpResponse struct {
@@ -17,7 +25,7 @@ type HttpResponse struct {
 
 // HttpError 增强版错误响应结构
 type HttpError struct {
-	Code        string      `json:"code" example:"idrm.common.internal_error"`    // 错误码，格式: 服务名.模块.错误
+	Code        int         `json:"code" example:"idrm.common.internal_error"`    // 错误码，格式: 服务名.模块.错误
 	Description string      `json:"description" example:"内部错误"`                   // 错误描述
 	Solution    string      `json:"solution,omitempty" example:"请联系管理员"`          // 解决方案
 	Cause       string      `json:"cause,omitempty" example:"数据库连接失败"`            // 错误原因
@@ -115,7 +123,7 @@ func ErrorDetailed(w http.ResponseWriter, code string, description string, solut
 // ErrorValidation 验证错误响应
 func ErrorValidation(w http.ResponseWriter, validationErrors map[string]string) {
 	resp := &HttpError{
-		Code:        "idrm.common.validation_error",
+		Code:        errorx.ErrCodeParamInvalid,
 		Description: "参数验证失败",
 		Solution:    "请检查请求参数是否符合要求",
 		Cause:       "请求参数不符合验证规则",
@@ -127,7 +135,7 @@ func ErrorValidation(w http.ResponseWriter, validationErrors map[string]string) 
 // NotFound 404错误响应
 func NotFound(w http.ResponseWriter, resource string) {
 	resp := &HttpError{
-		Code:        "idrm.common.not_found",
+		Code:        errorx.ErrCodeNotFound,
 		Description: resource + "不存在",
 		Solution:    "请确认资源ID是否正确",
 		Cause:       "未找到指定的资源",
@@ -138,7 +146,7 @@ func NotFound(w http.ResponseWriter, resource string) {
 // Unauthorized 401未授权响应
 func Unauthorized(w http.ResponseWriter, msg string) {
 	resp := &HttpError{
-		Code:        "idrm.common.unauthorized",
+		Code:       errorx.ErrCodeAuth
 		Description: msg,
 		Solution:    "请先登录或检查认证信息",
 		Cause:       "未提供有效的认证信息",
@@ -149,7 +157,7 @@ func Unauthorized(w http.ResponseWriter, msg string) {
 // Forbidden 403禁止访问响应
 func Forbidden(w http.ResponseWriter, msg string) {
 	resp := &HttpError{
-		Code:        "idrm.common.forbidden",
+		Code:        errorx.ErrCodeForbidden,
 		Description: msg,
 		Solution:    "请联系管理员获取权限",
 		Cause:       "当前用户没有执行此操作的权限",
@@ -160,7 +168,7 @@ func Forbidden(w http.ResponseWriter, msg string) {
 // InternalError 500内部错误响应
 func InternalError(w http.ResponseWriter, err error) {
 	resp := &HttpError{
-		Code:        "idrm.common.internal_error",
+		Code:        errorx.ErrCodeSystem,
 		Description: "内部服务错误",
 		Solution:    "请稍后重试或联系管理员",
 		Cause:       err.Error(),
@@ -241,20 +249,25 @@ func ResErrJson(w http.ResponseWriter, err error) {
 func buildHttpError(err error) *HttpError {
 	if err == nil {
 		return &HttpError{
-			Code:        "idrm.common.ok",
+			Code:        0,
 			Description: "成功",
 		}
 	}
 
-	if e, ok := err.(*errorx.CodeError); ok {
+	// 使用 errors.As 支持 wrapped error
+	var e *errorx.CodeError
+	if errors.As(err, &e) {
 		return &HttpError{
-			Code:        fmt.Sprintf("idrm.common.%d", e.GetCode()),
+			Code:        e.GetCode(),
 			Description: e.GetMsg(),
 		}
 	}
 
+	// 默认处理为系统错误，将原始错误信息放入 Cause 防止泄露敏感信息给 Description
 	return &HttpError{
-		Code:        "idrm.common.internal_error",
-		Description: err.Error(),
+		Code:        errorx.ErrCodeSystem,
+		Description: "系统内部错误",
+		Cause:       err.Error(),
+		Solution:    "请查看服务日志获取详细信息",
 	}
 }
