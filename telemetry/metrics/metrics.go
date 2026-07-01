@@ -26,6 +26,8 @@ var (
 
 // Init 初始化 Metrics 系统。
 func Init(config MetricsConfig, serviceName, version, environment string) error {
+	resetInstruments()
+
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -80,6 +82,8 @@ func Init(config MetricsConfig, serviceName, version, environment string) error 
 
 // Close 优雅关闭 Metrics 系统。
 func Close(ctx context.Context) error {
+	resetInstruments()
+
 	mu.Lock()
 	defer mu.Unlock()
 

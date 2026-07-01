@@ -1,7 +1,7 @@
 # Telemetry Metrics 模块设计方案
 
-> 版本：v0.1（设计稿）  
-> 状态：待评审  
+> 版本：v0.2
+> 状态：Phase 2 部分实现
 > 最后更新：2026-07-01
 
 ---
@@ -327,16 +327,16 @@ semconv.ServiceInstanceID(instanceID)   // HOSTNAME 或 os.Hostname()
 attribute.String("environment", environment)
 ```
 
-**Phase 2 可选增强**（参考 ar_metric 的 MetricResource，但不过度依赖 gopsutil）：
+**已实现增强**（参考 ar_metric 的 MetricResource，但不过度依赖 gopsutil）：
 
 | 属性 | 来源 | 优先级 |
 |------|------|--------|
-| `host.name` | `os.Hostname()` | Phase 2 |
-| `host.arch` | `runtime.GOARCH` | Phase 2 |
-| `process.runtime.name` | 固定 `go` | Phase 2 |
-| `process.runtime.version` | `runtime.Version()` | Phase 2 |
+| `host.name` | `os.Hostname()` | 已实现 |
+| `host.arch` | `runtime.GOARCH` | 已实现 |
+| `process.runtime.name` | 固定 `go` | 已实现 |
+| `process.runtime.version` | `runtime.Version()` | 已实现 |
 
-建议将 Trace / Metrics 的 Resource 构建逻辑抽取到 `telemetry/internal/otelresource` 公共包，避免重复，并避免 `telemetry` 根包与子包之间形成 import cycle。若 Phase 1 需要降低改动面，也可以先在 `metrics` 内复制当前 `trace.newResource` 逻辑，但不应抽到根 `telemetry` 包。
+Trace / Metrics 的 Resource 构建逻辑已抽取到 `telemetry/internal/otelresource` 公共包，避免重复，并避免 `telemetry` 根包与子包之间形成 import cycle。
 
 ### 4.5 Phase 2 辅助 API（instrument.go）
 
@@ -352,7 +352,10 @@ func RecordHistogram(ctx context.Context, name string, value float64, attrs ...a
 // RecordDuration 记录耗时（自动转 seconds）
 func RecordDuration(ctx context.Context, name string, duration time.Duration, attrs ...attribute.KeyValue) error
 
-// MustInitInstruments 批量注册指标定义（启动时调用）
+// InitInstruments 批量注册指标定义（启动时调用）
+func InitInstruments(defs ...InstrumentDef) error
+
+// MustInitInstruments 批量注册指标定义，失败时 panic
 func MustInitInstruments(defs ...InstrumentDef)
 ```
 
@@ -361,13 +364,13 @@ func MustInitInstruments(defs ...InstrumentDef)
 ```go
 type InstrumentDef struct {
     Name        string
-    Kind        InstrumentKind  // Counter | Histogram | Gauge
+    Kind        InstrumentKind  // Counter | Histogram
     Description string
     Unit        string
 }
 ```
 
-辅助 API 内部维护 `map[string]metric.Int64Counter` 等缓存，避免业务重复创建 Instrument。为防止动态 name 导致 Instrument 爆炸，`IncCounter` / `RecordHistogram` / `RecordDuration` 只允许写入已通过 `MustInitInstruments` 注册的 name；未知 name 返回错误或 no-op + warning，不在请求路径动态创建 Instrument。
+辅助 API 内部维护 `map[string]metric.Int64Counter` 等缓存，避免业务重复创建 Instrument。为防止动态 name 导致 Instrument 爆炸，`IncCounter` / `RecordHistogram` / `RecordDuration` 只允许写入已通过 `InitInstruments` / `MustInitInstruments` 注册的 name；未知 name 返回错误，不在请求路径动态创建 Instrument。
 
 ---
 
@@ -584,14 +587,14 @@ require (
 
 **交付物**：
 
-- [ ] `telemetry/metrics/metrics.go` — Init / Close / Meter
-- [ ] `telemetry/metrics/exporter.go` — OTLP gRPC/HTTP
-- [ ] `telemetry/metrics/config.go` — MetricsConfig
-- [ ] `telemetry/internal/otelresource/resource.go` — 可选：公共 Resource 构建（若不改 trace，则 metrics 先复制同等逻辑）
-- [ ] `telemetry/config.go` — 增加 Metrics 字段
-- [ ] `telemetry/telemetry.go` — 集成 Init/Close
-- [ ] 单元测试：Init 开关、noop 模式、exporter 构建
-- [ ] `telemetry/metrics/README.md` — 使用文档
+- [x] `telemetry/metrics/metrics.go` — Init / Close / Meter
+- [x] `telemetry/metrics/exporter.go` — OTLP gRPC/HTTP
+- [x] `telemetry/metrics/config.go` — MetricsConfig
+- [x] `telemetry/internal/otelresource/resource.go` — 公共 Resource 构建，Trace/Metrics 共用
+- [x] `telemetry/config.go` — 增加 Metrics 字段
+- [x] `telemetry/telemetry.go` — 集成 Init/Close
+- [x] 单元测试：Init 开关、noop 模式、exporter 构建、ManualReader 聚合
+- [x] `telemetry/metrics/README.md` — 使用文档
 
 **验收标准**：
 
@@ -605,10 +608,10 @@ require (
 
 **交付物**：
 
-- [ ] `telemetry/metrics/instrument.go` — IncCounter / RecordHistogram / RecordDuration
-- [ ] `telemetry/internal/otelresource/resource.go` — Trace/Metrics 公共 Resource 构建
-- [ ] 主机/运行时 Resource 属性
-- [ ] 指标命名常量包（`metrics/semconv.go` 或引用 OTel semconv）
+- [x] `telemetry/metrics/instrument.go` — IncCounter / RecordHistogram / RecordDuration
+- [x] `telemetry/internal/otelresource/resource.go` — Trace/Metrics 公共 Resource 构建
+- [x] 主机/运行时 Resource 属性
+- [x] 指标命名常量包（`metrics/semconv.go` 或引用 OTel semconv）
 
 **验收标准**：
 
@@ -851,9 +854,12 @@ docker run -d --name otel-collector \
 
 1. **Interval 默认值**：15s 是否合适？高频业务是否需要更短？
 2. **Timeout 是否拆分**：是否需要分别配置 Reader collect/export timeout 与 Exporter RPC timeout？
-3. **Resource 抽取时机**：Phase 1 是否同步重构 Trace 使用 `telemetry/internal/otelresource`，还是先让 Metrics 复制同等逻辑？
-4. **go-zero Trace 中间件取舍**：是否长期保留本仓库 `middleware.Trace()`，还是改为推荐 go-zero 原生 `RestConf.Middlewares.Trace` + 本仓库 OTel Provider。
-5. **指标命名前缀**：业务指标是否统一加 `business.` / `idrm.` 前缀，系统语义指标保持 OTel 名称。
+3. **go-zero Trace 中间件取舍**：是否长期保留本仓库 `middleware.Trace()`，还是改为推荐 go-zero 原生 `RestConf.Middlewares.Trace` + 本仓库 OTel Provider。
+4. **指标命名前缀**：当前提供 `business.` 推荐常量；是否需要为本项目固化 `idrm.` 命名空间仍待团队确认。
+
+**已决事项**：
+
+- Resource 已在 Phase 1 抽到 `telemetry/internal/otelresource`，Trace 与 Metrics 共用同一构建逻辑。
 
 ---
 
@@ -872,7 +878,17 @@ docker run -d --name otel-collector \
 | `telemetry/README.md` | 修改：增加 Metrics 说明 |
 | `go.mod` / `go.sum` | 修改：新增 OTel metric 依赖 |
 
-## 附录 B：参考资料
+## 附录 B：文件变更清单（Phase 2）
+
+| 文件 | 变更类型 |
+|------|----------|
+| `telemetry/metrics/instrument.go` | 新增：业务指标预注册与记录辅助 API |
+| `telemetry/metrics/semconv.go` | 新增：常用指标名与属性名常量 |
+| `telemetry/internal/otelresource/resource.go` | 修改：补充 host / Go runtime Resource 属性 |
+| `telemetry/metrics/metrics_test.go` | 修改：增加辅助 API 单元测试 |
+| `telemetry/metrics/README.md` | 修改：增加辅助 API 使用示例 |
+
+## 附录 C：参考资料
 
 - [OpenTelemetry Metrics API](https://opentelemetry.io/docs/specs/otel/metrics/api/)
 - [OTel Go Metrics SDK](https://opentelemetry.io/docs/languages/go/instrumentation/#metrics)

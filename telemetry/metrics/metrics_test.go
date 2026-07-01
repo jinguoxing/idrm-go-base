@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -77,6 +78,95 @@ func TestManualReaderCollectsCounter(t *testing.T) {
 	assert.Equal(t, int64(3), value)
 }
 
+func TestInstrumentHelpersCollectCounterHistogramAndDuration(t *testing.T) {
+	reader := useTestMeterProvider(t)
+
+	require.NoError(t, InitInstruments(
+		InstrumentDef{
+			Name:        "business.test.created.count",
+			Kind:        InstrumentKindCounter,
+			Description: "Created test records",
+			Unit:        "{record}",
+		},
+		InstrumentDef{
+			Name:        "business.test.operation.duration",
+			Kind:        InstrumentKindHistogram,
+			Description: "Test operation duration",
+			Unit:        "s",
+		},
+	))
+
+	require.NoError(t, IncCounter(context.Background(), "business.test.created.count", 2,
+		attribute.String("test.status", "ok")))
+	require.NoError(t, RecordHistogram(context.Background(), "business.test.operation.duration", 1.5))
+	require.NoError(t, RecordDuration(context.Background(), "business.test.operation.duration", 250*time.Millisecond))
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+
+	foundCounter, counterValue := findInt64Sum(rm, "business.test.created.count")
+	require.True(t, foundCounter)
+	assert.Equal(t, int64(2), counterValue)
+
+	foundHistogram, count, sum := findFloat64Histogram(rm, "business.test.operation.duration")
+	require.True(t, foundHistogram)
+	assert.Equal(t, uint64(2), count)
+	assert.InDelta(t, 1.75, sum, 0.000001)
+}
+
+func TestInitInstrumentsRejectsDuplicateDefinitions(t *testing.T) {
+	useTestMeterProvider(t)
+
+	err := InitInstruments(
+		InstrumentDef{Name: "business.test.duplicate.count", Kind: InstrumentKindCounter},
+		InstrumentDef{Name: "business.test.duplicate.count", Kind: InstrumentKindHistogram},
+	)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInstrumentAlreadyRegistered))
+}
+
+func TestInitInstrumentsRejectsExistingName(t *testing.T) {
+	useTestMeterProvider(t)
+
+	require.NoError(t, InitInstruments(
+		InstrumentDef{Name: "business.test.existing.count", Kind: InstrumentKindCounter},
+	))
+
+	err := InitInstruments(
+		InstrumentDef{Name: "business.test.existing.count", Kind: InstrumentKindCounter},
+	)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInstrumentAlreadyRegistered))
+}
+
+func TestRecordUnknownAndWrongKindInstruments(t *testing.T) {
+	useTestMeterProvider(t)
+
+	require.NoError(t, InitInstruments(
+		InstrumentDef{Name: "business.test.kind.duration", Kind: InstrumentKindHistogram},
+	))
+
+	err := IncCounter(context.Background(), "business.test.missing.count", 1)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInstrumentNotFound))
+
+	err = IncCounter(context.Background(), "business.test.kind.duration", 1)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInstrumentKindMismatch))
+}
+
+func TestIncCounterRejectsNegativeValue(t *testing.T) {
+	useTestMeterProvider(t)
+
+	require.NoError(t, InitInstruments(
+		InstrumentDef{Name: "business.test.negative.count", Kind: InstrumentKindCounter},
+	))
+
+	err := IncCounter(context.Background(), "business.test.negative.count", -1)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrInvalidMeasurement))
+}
+
 func findInt64Sum(rm metricdata.ResourceMetrics, name string) (bool, int64) {
 	for _, scope := range rm.ScopeMetrics {
 		for _, metric := range scope.Metrics {
@@ -91,4 +181,43 @@ func findInt64Sum(rm metricdata.ResourceMetrics, name string) (bool, int64) {
 		}
 	}
 	return false, 0
+}
+
+func findFloat64Histogram(rm metricdata.ResourceMetrics, name string) (bool, uint64, float64) {
+	for _, scope := range rm.ScopeMetrics {
+		for _, metric := range scope.Metrics {
+			if metric.Name != name {
+				continue
+			}
+			histogram, ok := metric.Data.(metricdata.Histogram[float64])
+			if !ok || len(histogram.DataPoints) == 0 {
+				return false, 0, 0
+			}
+			return true, histogram.DataPoints[0].Count, histogram.DataPoints[0].Sum
+		}
+	}
+	return false, 0, 0
+}
+
+func useTestMeterProvider(t *testing.T) *sdkmetric.ManualReader {
+	t.Helper()
+
+	resetInstruments()
+
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	mu.Lock()
+	if meterProvider != nil {
+		_ = meterProvider.Shutdown(context.Background())
+	}
+	meterProvider = provider
+	meter = provider.Meter(instrumentationName, metric.WithInstrumentationVersion("test"))
+	mu.Unlock()
+
+	t.Cleanup(func() {
+		require.NoError(t, Close(context.Background()))
+	})
+
+	return reader
 }

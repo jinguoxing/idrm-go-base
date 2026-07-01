@@ -2,6 +2,7 @@ package otelresource
 
 import (
 	"os"
+	"runtime"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -17,6 +18,7 @@ func New(serviceName, version, environment string) (*resource.Resource, error) {
 			instanceID = hostname
 		}
 	}
+	hostname, _ := os.Hostname()
 
 	return resource.Merge(
 		resource.Default(),
@@ -26,6 +28,10 @@ func New(serviceName, version, environment string) (*resource.Resource, error) {
 			semconv.ServiceVersion(version),
 			semconv.DeploymentEnvironment(environment),
 			semconv.ServiceInstanceID(instanceID),
+			attribute.String("host.name", hostname),
+			attribute.String("host.arch", runtime.GOARCH),
+			attribute.String("process.runtime.name", "go"),
+			attribute.String("process.runtime.version", runtime.Version()),
 			attribute.String("environment", environment),
 		),
 	)
