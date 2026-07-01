@@ -78,6 +78,46 @@ func TestManualReaderCollectsCounter(t *testing.T) {
 	assert.Equal(t, int64(3), value)
 }
 
+func TestHTTPServerInstrumentsCollectDurationAndActiveRequests(t *testing.T) {
+	reader := useTestMeterProvider(t)
+
+	attrs := []attribute.KeyValue{
+		attribute.String(AttrHTTPRequestMethod, "GET"),
+		attribute.String(AttrHTTPRoute, "/api/users/:id"),
+		attribute.String(AttrURLScheme, "http"),
+	}
+	require.NoError(t, AddHTTPServerActiveRequest(context.Background(), 1, attrs...))
+	require.NoError(t, RecordHTTPServerRequest(context.Background(), 125*time.Millisecond,
+		append(attrs, attribute.Int(AttrHTTPResponseStatusCode, httpStatusOK))...))
+	require.NoError(t, AddHTTPServerActiveRequest(context.Background(), -1, attrs...))
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+
+	foundHistogram, count, sum := findFloat64Histogram(rm, MetricHTTPServerRequestDuration)
+	require.True(t, foundHistogram)
+	assert.Equal(t, uint64(1), count)
+	assert.InDelta(t, 0.125, sum, 0.000001)
+
+	foundActive, activeValue := findInt64Sum(rm, MetricHTTPServerActiveRequests)
+	require.True(t, foundActive)
+	assert.Equal(t, int64(0), activeValue)
+}
+
+func TestRuntimeMetricsCollect(t *testing.T) {
+	reader := useTestMeterProvider(t)
+
+	require.NoError(t, InitRuntimeMetrics())
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+
+	assert.True(t, metricExists(rm, MetricGoGoroutineCount))
+	assert.True(t, metricExists(rm, MetricGoMemoryAllocated))
+	assert.True(t, metricExists(rm, MetricGoMemoryUsed))
+	assert.True(t, metricExists(rm, MetricGoProcessorLimit))
+}
+
 func TestInstrumentHelpersCollectCounterHistogramAndDuration(t *testing.T) {
 	reader := useTestMeterProvider(t)
 
@@ -199,10 +239,23 @@ func findFloat64Histogram(rm metricdata.ResourceMetrics, name string) (bool, uin
 	return false, 0, 0
 }
 
+func metricExists(rm metricdata.ResourceMetrics, name string) bool {
+	for _, scope := range rm.ScopeMetrics {
+		for _, metric := range scope.Metrics {
+			if metric.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func useTestMeterProvider(t *testing.T) *sdkmetric.ManualReader {
 	t.Helper()
 
 	resetInstruments()
+	resetHTTPInstruments()
+	resetRuntimeMetrics()
 
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
@@ -221,3 +274,5 @@ func useTestMeterProvider(t *testing.T) *sdkmetric.ManualReader {
 
 	return reader
 }
+
+const httpStatusOK = 200

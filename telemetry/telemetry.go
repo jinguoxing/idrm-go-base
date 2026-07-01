@@ -45,13 +45,14 @@ func Init(config Config) error {
 
 	// 3. 初始化指标
 	metricsConfig := metrics.MetricsConfig{
-		Enabled:    config.Metrics.Enabled,
-		Endpoint:   config.Metrics.Endpoint,
-		Protocol:   config.Metrics.Protocol,
-		Interval:   config.Metrics.Interval,
-		Timeout:    config.Metrics.Timeout,
-		TLSEnabled: config.Metrics.TLSEnabled,
-		Headers:    config.Metrics.Headers,
+		Enabled:        config.Metrics.Enabled,
+		Endpoint:       config.Metrics.Endpoint,
+		Protocol:       config.Metrics.Protocol,
+		Interval:       config.Metrics.Interval,
+		Timeout:        config.Metrics.Timeout,
+		TLSEnabled:     config.Metrics.TLSEnabled,
+		Headers:        config.Metrics.Headers,
+		RuntimeEnabled: config.Metrics.RuntimeEnabled,
 	}
 	if err := metrics.Init(metricsConfig, config.ServiceName, config.ServiceVersion, config.Environment); err != nil {
 		logx.Errorf("Metrics 初始化失败: %v", err)

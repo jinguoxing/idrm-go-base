@@ -11,8 +11,9 @@
 | 1 | Recovery | `recovery.go` | 捕获 panic 并返回 500 错误 |
 | 2 | RequestID | `requestid.go` | 生成唯一请求ID |
 | 3 | Trace | `trace.go` | OpenTelemetry 链路追踪 |
-| 4 | CORS | `cors.go` | 跨域资源共享 |
-| 5 | Logger | `logger.go` | 请求日志记录 |
+| 4 | Metrics | `metrics.go` | OpenTelemetry HTTP 指标 |
+| 5 | CORS | `cors.go` | 跨域资源共享 |
+| 6 | Logger | `logger.go` | 请求日志记录 |
 
 ---
 
@@ -34,8 +35,9 @@ server.Use(middleware.Logger())     // 5. Request logging
 1. **Recovery** 必须第一个，捕获后续所有 panic
 2. **RequestID** 第二个，为请求生成唯一ID
 3. **Trace** 第三个，Extract 上游 trace context 并创建 Server Span
-4. **CORS** 处理跨域请求
-5. **Logger** 最后，记录完整请求信息
+4. **Metrics** 推荐用 `WithMetrics(routes...)` 在路由注册阶段包装，拿到 go-zero route 模板
+5. **CORS** 处理跨域请求
+6. **Logger** 最后，记录完整请求信息
 
 > **前置条件**：注册 `middleware.Trace()` 前须先调用 `telemetry.Init()`，确保 Propagator 和 TracerProvider 已初始化。
 
@@ -123,7 +125,52 @@ func (l *Logic) Handle(req *Req) {
 
 ---
 
-### 4. CORS - 跨域支持
+### 4. Metrics - HTTP 指标
+
+**功能**：
+- 自动记录 HTTP 请求耗时
+- 自动记录 HTTP 活跃请求数
+- 使用 go-zero `rest.Route.Path` 作为低基数 `http.route`
+- 捕获响应状态码，支持 `Flush`、`Hijack`、`Push`、`ReadFrom` 和 `Unwrap`
+
+**推荐用法**：
+```go
+server.AddRoutes(middleware.WithMetrics([]rest.Route{
+    {
+        Method: http.MethodGet,
+        Path:   "/api/users/:id",
+        Handler: userHandler,
+    },
+}...))
+```
+
+使用 `rest.WithPrefix` 时：
+```go
+server.AddRoutes(
+    middleware.WithMetricsPrefix("/api", routes...),
+    rest.WithPrefix("/api"),
+)
+```
+
+**采集指标**：
+```go
+http.server.request.duration
+http.server.active_requests
+```
+
+**指标属性**：
+```go
+http.request.method: GET
+http.route: /api/users/:id
+http.response.status_code: 200
+url.scheme: http
+```
+
+如需全局注册，必须通过 `WithRouteNamer` 提供低基数 route 模板；默认不会把原始 URL path 写入 `http.route`。
+
+---
+
+### 5. CORS - 跨域支持
 
 **功能**：
 - 支持所有来源 (`*`)
@@ -148,7 +195,7 @@ w.Header().Set("Access-Control-Allow-Origin", "https://yourdomain.com")
 
 ---
 
-### 5. Logger - 请求日志
+### 6. Logger - 请求日志
 
 **功能**：
 - 记录所有 HTTP 请求

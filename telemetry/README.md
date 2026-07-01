@@ -87,6 +87,7 @@ Telemetry:
     Interval: 15
     Timeout: 10
     TLSEnabled: false
+    RuntimeEnabled: false
     
   # 审计日志配置
   Audit:

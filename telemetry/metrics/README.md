@@ -13,9 +13,11 @@ Telemetry:
     Interval: 15
     Timeout: 10
     TLSEnabled: false
+    RuntimeEnabled: false
 ```
 
 `Enabled` 默认是 `false`，基础库不会在未显式开启时启动周期导出或连接 Collector。
+`RuntimeEnabled` 默认也是 `false`，开启后会注册 Go runtime observable metrics。
 
 ## 业务埋点辅助 API
 
@@ -87,4 +89,57 @@ func RecordOrderCreated(ctx context.Context, status string) {
 
 ## go-zero HTTP 指标
 
-Phase 1 只提供业务指标入口，不实现 HTTP 自动指标。go-zero 自带 `RestConf.Middlewares.Prometheus` / `Metrics` 已覆盖 HTTP 框架级指标。后续如果启用 OTel HTTP 指标，应使用 route-aware 包装从 `rest.Route.Path` 获取低基数 `http.route`。
+HTTP 自动指标通过 `middleware.WithMetrics` 包装 go-zero routes，使用 `rest.Route.Path` 作为低基数 `http.route`：
+
+```go
+server.AddRoutes(middleware.WithMetrics([]rest.Route{
+    {
+        Method: http.MethodGet,
+        Path:   "/api/users/:id",
+        Handler: userHandler,
+    },
+}...))
+```
+
+如果路由组使用了 go-zero 的 `rest.WithPrefix`，用 `WithMetricsPrefix` 保持 `http.route` 和最终模板一致：
+
+```go
+server.AddRoutes(
+    middleware.WithMetricsPrefix("/api", routes...),
+    rest.WithPrefix("/api"),
+)
+```
+
+采集的指标：
+
+| 指标 | 类型 | 单位 |
+|------|------|------|
+| `http.server.request.duration` | Histogram | `s` |
+| `http.server.active_requests` | UpDownCounter | `{request}` |
+
+如果必须使用全局 middleware，可以传入 `WithRouteNamer` 显式返回 route 模板；默认不会把 `r.URL.Path` 写入 `http.route`，避免高基数。
+
+启用 OTel HTTP 指标后，建议关闭或在 Dashboard 中区分 go-zero 自带 `RestConf.Middlewares.Prometheus`，避免 HTTP 延迟和请求量出现两套口径。
+
+## Go runtime 指标
+
+开启配置：
+
+```yaml
+Telemetry:
+  Metrics:
+    Enabled: true
+    RuntimeEnabled: true
+```
+
+当前注册的 runtime 指标包括：
+
+| 指标 | 说明 |
+|------|------|
+| `go.goroutine.count` | 当前 goroutine 数 |
+| `go.memory.allocated` | 累计 heap 分配字节 |
+| `go.memory.allocations` | 累计 heap 分配次数 |
+| `go.memory.gc.goal` | GC heap 目标 |
+| `go.memory.limit` | Go runtime memory limit，无显式限制时为 `0` |
+| `go.memory.used` | Go runtime 从系统获取的内存 |
+| `go.processor.limit` | 当前 `GOMAXPROCS` |

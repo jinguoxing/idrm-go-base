@@ -14,7 +14,7 @@
 | **db** | 数据库初始化 (GORM, go-zero sqlx) ✨ |
 | **errorx** | 错误码定义和业务错误 |
 | **response** | 统一 HTTP 响应格式 |
-| **middleware** | 中间件 (auth/cors/logger/recovery/trace) |
+| **middleware** | 中间件 (auth/cors/logger/recovery/trace/metrics) |
 | **validator** | 参数校验 (支持中文错误) |
 | **telemetry** | 遥测 (log/trace/metrics/audit) |
 | **uuid** | UUID v7 生成器 |
@@ -164,11 +164,12 @@ err := telemetry.Init(telemetry.Config{
         Protocol: "grpc",
     },
     Metrics: telemetry.MetricsConfig{
-        Enabled:  true,
-        Endpoint: "localhost:4317",
-        Protocol: "grpc",
-        Interval: 15,
-        Timeout:  10,
+        Enabled:        true,
+        Endpoint:       "localhost:4317",
+        Protocol:       "grpc",
+        Interval:       15,
+        Timeout:        10,
+        RuntimeEnabled: true,
     },
 })
 ```

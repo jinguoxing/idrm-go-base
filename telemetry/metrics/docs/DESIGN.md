@@ -136,6 +136,7 @@ type MetricsConfig struct {
     Timeout  int               `json:",default=10"`             // 单次导出超时（秒）
     TLSEnabled bool            `json:",default=false"`
     Headers    map[string]string `json:",optional"`            // 认证 token 等
+    RuntimeEnabled bool        `json:",default=false"`          // Go runtime 指标
 }
 ```
 
@@ -148,6 +149,7 @@ type MetricsConfig struct {
 | Protocol | `grpc` | 与 Trace 默认一致 |
 | Interval | `15s` | OTel 官方示例常用 15–60s；比 ar_metric 示例 10s 略保守 |
 | Timeout | `10s` | Reader 单次 collect/export 超时；Exporter RPC 超时也默认使用该值 |
+| RuntimeEnabled | `false` | runtime 指标默认按需启用，避免基础库默认增加额外观测项 |
 
 ### 3.2 顶层 Config 扩展
 
@@ -188,6 +190,7 @@ Telemetry:
     Protocol: grpc
     Interval: 15                           # 每 15 秒导出一次
     Timeout: 10
+    RuntimeEnabled: true                   # 可选：Go runtime 指标
     TLSEnabled: true
     Headers:
       Authorization: "Bearer <token>"
@@ -420,9 +423,9 @@ type InstrumentDef struct {
 - 错误指标统一用 `error.type` 或 `http.response.status_code` 而非完整 error message
 - HTTP 请求数不单独定义 `http.server.request.count`；优先使用 `http.server.request.duration` Histogram 的 count。确需独立 Counter 时，应放入业务命名空间，如 `business.api.request.count`。
 
-### 6.3 与 Trace 的关联（Exemplars，Phase 3+）
+### 6.3 与 Trace 的关联（Exemplars）
 
-OTel Metrics 支持 Exemplars，可将特定 Histogram 数据点关联到 TraceID。Phase 3 评估是否在 `RecordHistogram` 辅助方法中自动附加当前 Span 的 TraceID。
+OTel Metrics 支持 Exemplars，可将特定 Histogram 数据点关联到 TraceID。当前实现会把 HTTP 请求的 `r.Context()` 传给 `RecordHTTPServerRequest`，由 OTel SDK 根据当前 Context / Span 处理 exemplar；本模块不把 `trace_id` 或 `span_id` 手工写入指标 label，避免高基数。
 
 ---
 
@@ -440,6 +443,9 @@ func MetricsForRoute(routePath, method string, opts ...MetricsOption) func(http.
 
 // WithMetrics 批量包装 go-zero routes，推荐在 handler.RegisterHandlers 中使用。
 func WithMetrics(routes ...rest.Route) []rest.Route
+
+// WithMetricsPrefix 配合 go-zero rest.WithPrefix 使用，保证 http.route 包含最终前缀。
+func WithMetricsPrefix(prefix string, routes ...rest.Route) []rest.Route
 ```
 
 使用方式：
@@ -454,6 +460,15 @@ server.AddRoutes(middleware.WithMetrics([]rest.Route{
 }...))
 ```
 
+若使用 go-zero `rest.WithPrefix("/api")`，应使用：
+
+```go
+server.AddRoutes(
+    middleware.WithMetricsPrefix("/api", routes...),
+    rest.WithPrefix("/api"),
+)
+```
+
 **自动采集指标**：
 
 | 指标 | 类型 | 属性 |
@@ -464,6 +479,7 @@ server.AddRoutes(middleware.WithMetrics([]rest.Route{
 **实现要点**：
 
 - `WithMetrics` 应逐个 route 包装 handler，使 middleware 闭包捕获 `route.Path` 和 `route.Method`
+- 使用 go-zero `rest.WithPrefix` 时，需通过 `WithMetricsPrefix` 把 prefix 同步进 metrics 闭包
 - 默认不得使用 `r.URL.Path` 作为 `http.route` label；没有 route 模板时应省略 `http.route` 或记录为低基数占位值
 - 响应状态码捕获可参考 go-zero `response.NewWithCodeResponseWriter` 的行为，但本仓库不能 import go-zero internal 包，应自行实现兼容 `http.ResponseWriter` / `http.Flusher` / `http.Hijacker` 的 wrapper
 - 与 Trace 中间件独立，Metrics 关闭时不影响 Trace
@@ -486,6 +502,24 @@ func WithRouteNamer(fn func(*http.Request) string) MetricsOption
 ```
 Recovery → RequestID → Trace → MetricsForRoute/WithMetrics → CORS → Logger → Auth
 ```
+
+---
+
+### 7.3 Go runtime 指标
+
+`telemetry/metrics/runtime.go` 通过 `RuntimeEnabled` 控制，默认关闭。开启后注册以下 observable metrics：
+
+| 指标 | 类型 | 说明 |
+|------|------|------|
+| `go.goroutine.count` | Observable UpDownCounter | 当前 goroutine 数 |
+| `go.memory.allocated` | Observable Counter | 累计 heap 分配字节 |
+| `go.memory.allocations` | Observable Counter | 累计 heap 分配次数 |
+| `go.memory.gc.goal` | Observable UpDownCounter | GC heap 目标 |
+| `go.memory.limit` | Observable UpDownCounter | Go runtime memory limit；无限制时记录 `0` |
+| `go.memory.used` | Observable UpDownCounter | Go runtime 从系统获取的内存 |
+| `go.processor.limit` | Observable UpDownCounter | 当前 `GOMAXPROCS` |
+
+实现仅使用标准库 `runtime` / `runtime/debug`，不引入额外 runtime instrumentation 依赖。
 
 ---
 
@@ -622,9 +656,9 @@ require (
 
 **交付物**：
 
-- [ ] `middleware/metrics.go` — HTTP 请求自动指标，主 API 为 `WithMetrics(routes ...rest.Route)` / `MetricsForRoute(routePath, method string)`
-- [ ] `telemetry/metrics/runtime.go` — Go runtime 指标（goroutine 数、GC 等，可选）
-- [ ] Exemplars 支持评估与实现
+- [x] `middleware/metrics.go` — HTTP 请求自动指标，主 API 为 `WithMetrics(routes ...rest.Route)` / `MetricsForRoute(routePath, method string)`
+- [x] `telemetry/metrics/runtime.go` — Go runtime 指标（goroutine 数、内存、GOMAXPROCS 等，可选）
+- [x] Exemplars 支持评估：使用 OTel SDK context 关联，不新增高基数 label
 
 **验收标准**：
 
@@ -888,7 +922,21 @@ docker run -d --name otel-collector \
 | `telemetry/metrics/metrics_test.go` | 修改：增加辅助 API 单元测试 |
 | `telemetry/metrics/README.md` | 修改：增加辅助 API 使用示例 |
 
-## 附录 C：参考资料
+## 附录 C：文件变更清单（Phase 3）
+
+| 文件 | 变更类型 |
+|------|----------|
+| `middleware/metrics.go` | 新增：go-zero route-aware HTTP metrics middleware |
+| `middleware/metrics_test.go` | 新增：HTTP route/status metrics 单元测试 |
+| `telemetry/metrics/http.go` | 新增：HTTP 标准指标 instruments 与记录函数 |
+| `telemetry/metrics/runtime.go` | 新增：Go runtime observable metrics |
+| `telemetry/metrics/config.go` | 修改：增加 `RuntimeEnabled` |
+| `telemetry/config.go` | 修改：透出 `RuntimeEnabled` |
+| `telemetry/telemetry.go` | 修改：传递 `RuntimeEnabled` |
+| `telemetry/metrics/README.md` | 修改：增加 HTTP/runtime 使用文档 |
+| `middleware/README.md` | 修改：增加 Metrics 中间件说明 |
+
+## 附录 D：参考资料
 
 - [OpenTelemetry Metrics API](https://opentelemetry.io/docs/specs/otel/metrics/api/)
 - [OTel Go Metrics SDK](https://opentelemetry.io/docs/languages/go/instrumentation/#metrics)

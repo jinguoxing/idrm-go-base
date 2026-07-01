@@ -27,6 +27,8 @@ var (
 // Init 初始化 Metrics 系统。
 func Init(config MetricsConfig, serviceName, version, environment string) error {
 	resetInstruments()
+	resetHTTPInstruments()
+	resetRuntimeMetrics()
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -75,6 +77,15 @@ func Init(config MetricsConfig, serviceName, version, environment string) error 
 	meterProvider = provider
 	meter = provider.Meter(instrumentationName, metric.WithInstrumentationVersion(instrumentationVersion))
 
+	if err := initHTTPServerInstruments(meter); err != nil {
+		return err
+	}
+	if config.RuntimeEnabled {
+		if err := initRuntimeMetrics(meter); err != nil {
+			return err
+		}
+	}
+
 	logx.Infof("Metrics 初始化完成 [protocol=%s, endpoint=%s, interval=%s]",
 		normalizeProtocol(config.Protocol), config.Endpoint, interval)
 	return nil
@@ -83,6 +94,8 @@ func Init(config MetricsConfig, serviceName, version, environment string) error 
 // Close 优雅关闭 Metrics 系统。
 func Close(ctx context.Context) error {
 	resetInstruments()
+	resetHTTPInstruments()
+	resetRuntimeMetrics()
 
 	mu.Lock()
 	defer mu.Unlock()
