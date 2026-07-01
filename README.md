@@ -16,7 +16,7 @@
 | **response** | 统一 HTTP 响应格式 |
 | **middleware** | 中间件 (auth/cors/logger/recovery/trace) |
 | **validator** | 参数校验 (支持中文错误) |
-| **telemetry** | 遥测 (log/trace/audit) |
+| **telemetry** | 遥测 (log/trace/metrics/audit) |
 | **uuid** | UUID v7 生成器 |
 
 ---
@@ -162,6 +162,13 @@ err := telemetry.Init(telemetry.Config{
         Enabled:  true,
         Endpoint: "localhost:4317",
         Protocol: "grpc",
+    },
+    Metrics: telemetry.MetricsConfig{
+        Enabled:  true,
+        Endpoint: "localhost:4317",
+        Protocol: "grpc",
+        Interval: 15,
+        Timeout:  10,
     },
 })
 ```

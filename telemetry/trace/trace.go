@@ -2,18 +2,16 @@ package trace
 
 import (
 	"context"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/jinguoxing/idrm-go-base/telemetry/internal/otelresource"
+
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -29,13 +27,13 @@ var (
 
 // TraceConfig 链路追踪配置
 type TraceConfig struct {
-	Enabled  bool
-	Endpoint string            // OTLP endpoint，gRPC 为 host:port，HTTP 可为 http(s)://host:port
-	Protocol string            // otlp 传输协议：grpc（默认）或 http
-	Sampler     float64           // 采样率 0.0-1.0
-	TLSEnabled  bool              // 是否启用 TLS 连接 Collector，默认 false
-	Headers     map[string]string // OTLP 导出请求头，如 Collector 认证 token
-	Batcher  string            // 保留字段，当前固定使用 OTLP batch exporter
+	Enabled    bool
+	Endpoint   string            // OTLP endpoint，gRPC 为 host:port，HTTP 可为 http(s)://host:port
+	Protocol   string            // otlp 传输协议：grpc（默认）或 http
+	Sampler    float64           // 采样率 0.0-1.0
+	TLSEnabled bool              // 是否启用 TLS 连接 Collector，默认 false
+	Headers    map[string]string // OTLP 导出请求头，如 Collector 认证 token
+	Batcher    string            // 保留字段，当前固定使用 OTLP batch exporter
 }
 
 // Init 初始化链路追踪
@@ -63,7 +61,7 @@ func Init(config TraceConfig, serviceName, version, environment string) error {
 		return err
 	}
 
-	res, err := newResource(serviceName, version, environment)
+	res, err := otelresource.New(serviceName, version, environment)
 	if err != nil {
 		logx.Errorf("创建 resource 失败: %v", err)
 		return err
@@ -143,28 +141,6 @@ func newExporter(ctx context.Context, config TraceConfig) (sdktrace.SpanExporter
 		}
 		return exporter, nil
 	}
-}
-
-func newResource(serviceName, version, environment string) (*resource.Resource, error) {
-	instanceID := os.Getenv("HOSTNAME")
-	if instanceID == "" {
-		hostname, err := os.Hostname()
-		if err == nil {
-			instanceID = hostname
-		}
-	}
-
-	return resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion(version),
-			semconv.DeploymentEnvironment(environment),
-			semconv.ServiceInstanceID(instanceID),
-			attribute.String("environment", environment),
-		),
-	)
 }
 
 func normalizeProtocol(protocol string) string {

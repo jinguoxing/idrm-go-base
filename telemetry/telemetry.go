@@ -5,6 +5,7 @@ import (
 
 	"github.com/jinguoxing/idrm-go-base/telemetry/audit"
 	"github.com/jinguoxing/idrm-go-base/telemetry/log"
+	"github.com/jinguoxing/idrm-go-base/telemetry/metrics"
 	"github.com/jinguoxing/idrm-go-base/telemetry/trace"
 
 	"github.com/zeromicro/go-zero/core/logx"
@@ -29,20 +30,35 @@ func Init(config Config) error {
 
 	// 2. 初始化链路追踪
 	traceConfig := trace.TraceConfig{
-		Enabled:  config.Trace.Enabled,
-		Endpoint: config.Trace.Endpoint,
-		Protocol: config.Trace.Protocol,
-		Sampler:  config.Trace.Sampler,
+		Enabled:    config.Trace.Enabled,
+		Endpoint:   config.Trace.Endpoint,
+		Protocol:   config.Trace.Protocol,
+		Sampler:    config.Trace.Sampler,
 		TLSEnabled: config.Trace.TLSEnabled,
-		Headers:  config.Trace.Headers,
-		Batcher:  config.Trace.Batcher,
+		Headers:    config.Trace.Headers,
+		Batcher:    config.Trace.Batcher,
 	}
 	if err := trace.Init(traceConfig, config.ServiceName, config.ServiceVersion, config.Environment); err != nil {
 		logx.Errorf("链路追踪初始化失败: %v", err)
 		return err
 	}
 
-	// 3. 初始化审计日志
+	// 3. 初始化指标
+	metricsConfig := metrics.MetricsConfig{
+		Enabled:    config.Metrics.Enabled,
+		Endpoint:   config.Metrics.Endpoint,
+		Protocol:   config.Metrics.Protocol,
+		Interval:   config.Metrics.Interval,
+		Timeout:    config.Metrics.Timeout,
+		TLSEnabled: config.Metrics.TLSEnabled,
+		Headers:    config.Metrics.Headers,
+	}
+	if err := metrics.Init(metricsConfig, config.ServiceName, config.ServiceVersion, config.Environment); err != nil {
+		logx.Errorf("Metrics 初始化失败: %v", err)
+		return err
+	}
+
+	// 4. 初始化审计日志
 	auditConfig := audit.AuditConfig{
 		Enabled: config.Audit.Enabled,
 		Url:     config.Audit.Url,
@@ -60,6 +76,11 @@ func Close(ctx context.Context) {
 
 	// 关闭审计日志
 	audit.Close()
+
+	// 关闭指标
+	if err := metrics.Close(ctx); err != nil {
+		logx.Errorf("关闭 Metrics 失败: %v", err)
+	}
 
 	// 关闭链路追踪
 	trace.Close(ctx)

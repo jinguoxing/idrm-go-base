@@ -2,14 +2,15 @@
 
 ## 📋 概述
 
-完整的可观测性（Observability）系统，包括日志、链路追踪和审计日志三大模块。
+完整的可观测性（Observability）系统，包括日志、链路追踪、指标和审计日志。
 
-## 🎯 三大模块
+## 🎯 四大模块
 
 | 模块 | 功能 | 技术栈 |
 |------|------|--------|
 | **日志** | 本地日志 + 远程上报 | go-zero logx + 自定义 Writer |
 | **链路追踪** | OpenTelemetry 标准 | OTLP gRPC/HTTP |
+| **指标** | OpenTelemetry Metrics | OTLP gRPC/HTTP |
 | **审计日志** | 操作记录 + 数据对比 | 自定义实现 |
 
 ## 📁 目录结构
@@ -28,6 +29,11 @@ pkg/telemetry/
 │   ├── propagation.go     # HTTP Extract/Inject
 │   ├── http_client.go     # 出站 HTTP 辅助
 │   ├── grpc.go            # gRPC StatsHandler
+│   └── README.md
+├── metrics/               # 指标模块
+│   ├── metrics.go         # 初始化与 OTLP 导出
+│   ├── exporter.go        # OTLP Metrics exporter
+│   ├── config.go          # Metrics 配置
 │   └── README.md
 ├── audit/                 # 审计日志模块
 │   ├── audit.go
@@ -71,6 +77,15 @@ Telemetry:
     Endpoint: localhost:4317
     Protocol: grpc
     Sampler: 1.0
+    TLSEnabled: false
+
+  # 指标配置
+  Metrics:
+    Enabled: false
+    Endpoint: localhost:4317
+    Protocol: grpc
+    Interval: 15
+    Timeout: 10
     TLSEnabled: false
     
   # 审计日志配置
@@ -406,6 +421,7 @@ A: 设置所有模块的 `Enabled: false`
 A:
 - 日志级别: `info`
 - 链路采样率: `0.1-0.5` (10%-50%)
+- 指标: 按需开启 `Metrics.Enabled=true`，推荐先接入业务指标
 - 审计日志: 保持启用
 
 **Q: 如何调试 Telemetry 问题？**
@@ -417,6 +433,7 @@ A: 查看本地日志，检查后端服务是否正常运行。
 Telemetry 系统已完整实现，包括：
 - ✅ 日志系统（本地+远程）
 - ✅ 链路追踪（OpenTelemetry）
+- ✅ 指标（OpenTelemetry Metrics）
 - ✅ 审计日志（操作记录）
 
 现在可以开始在业务代码中使用了！
