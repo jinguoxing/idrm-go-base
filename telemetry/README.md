@@ -9,7 +9,7 @@
 | 模块 | 功能 | 技术栈 |
 |------|------|--------|
 | **日志** | 本地日志 + 远程上报 | go-zero logx + 自定义 Writer |
-| **链路追踪** | OpenTelemetry 标准 | OTLP + gRPC |
+| **链路追踪** | OpenTelemetry 标准 | OTLP gRPC/HTTP |
 | **审计日志** | 操作记录 + 数据对比 | 自定义实现 |
 
 ## 📁 目录结构
@@ -23,8 +23,11 @@ pkg/telemetry/
 │   ├── remote_writer.go
 │   └── README.md
 ├── trace/                 # 链路追踪模块
-│   ├── trace.go
-│   ├── span.go
+│   ├── trace.go           # 初始化与 OTLP 导出
+│   ├── span.go            # Span 辅助方法
+│   ├── propagation.go     # HTTP Extract/Inject
+│   ├── http_client.go     # 出站 HTTP 辅助
+│   ├── grpc.go            # gRPC StatsHandler
 │   └── README.md
 ├── audit/                 # 审计日志模块
 │   ├── audit.go
@@ -65,9 +68,10 @@ Telemetry:
   # 链路追踪配置
   Trace:
     Enabled: true
-    Endpoint: localhost:4317  # Jaeger OTLP gRPC
-    Sampler: 1.0              # 100% 采样
-    Batcher: otlp
+    Endpoint: localhost:4317
+    Protocol: grpc
+    Sampler: 1.0
+    TLSEnabled: false
     
   # 审计日志配置
   Audit:

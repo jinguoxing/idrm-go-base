@@ -33,10 +33,13 @@ type LogConfig struct {
 
 // TraceConfig 链路追踪配置
 type TraceConfig struct {
-	Enabled  bool    `json:",default=true"`
-	Endpoint string  `json:",default=http://localhost:4318"` // OTLP endpoint
-	Sampler  float64 `json:",default=1.0"`                   // 采样率 0.0-1.0
-	Batcher  string  `json:",default=otlp"`                  // jaeger/zipkin/otlp
+	Enabled  bool              `json:",default=true"`
+	Endpoint string            `json:",default=localhost:4317"` // OTLP endpoint，gRPC 默认 4317
+	Protocol string            `json:",default=grpc"`           // otlp 传输协议：grpc 或 http
+	Sampler    float64           `json:",default=1.0"`  // 采样率 0.0-1.0
+	TLSEnabled bool              `json:",default=false"` // 启用 TLS 连接 Collector
+	Headers    map[string]string `json:",optional"`      // OTLP 导出请求头（如认证 token）
+	Batcher  string            `json:",default=otlp"`           // 保留字段，当前固定使用 OTLP
 }
 
 // AuditConfig 审计日志配置

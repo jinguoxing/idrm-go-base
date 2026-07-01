@@ -7,11 +7,12 @@
 ## ✨ 功能特性
 
 - ✅ **OpenTelemetry 标准**：完全遵循 OTEL 规范
-- ✅ **OTLP 导出器**：gRPC 协议发送链路数据
+- ✅ **OTLP 导出器**：支持 gRPC / HTTP 协议
+- ✅ **分布式传播**：HTTP Extract/Inject + gRPC StatsHandler
 - ✅ **自动 Span 创建**：多种 Span 类型支持
-- ✅ **代码位置追踪**：自动提取调用位置和函数名
-- ✅ **灵活采样**：可配置采样率
-- ✅ **批量发送**：高性能批量导出
+- ✅ **代码位置追踪**：`StartInternal` 自动提取调用位置
+- ✅ **ParentBased 采样**：尊重上游采样决策
+- ✅ **生产就绪**：TLS、认证 Header、导出重试
 
 ## ⚙️ 配置
 
@@ -19,10 +20,12 @@
 
 ```go
 type TraceConfig struct {
-    Enabled  bool    // 是否启用
-    Endpoint string  // OTLP endpoint (gRPC)
-    Sampler  float64 // 采样率 0.0-1.0
-    Batcher  string  // 导出器类型
+    Enabled    bool              // 是否启用
+    Endpoint   string            // OTLP endpoint
+    Protocol   string            // grpc（默认）或 http
+    Sampler    float64           // 采样率 0.0-1.0
+    TLSEnabled bool              // 是否启用 TLS
+    Headers    map[string]string // Collector 认证头等
 }
 ```
 
@@ -38,8 +41,9 @@ Telemetry:
   Trace:
     Enabled: true
     Endpoint: localhost:4317  # Jaeger OTLP gRPC
+    Protocol: grpc
     Sampler: 1.0              # 100% 采样
-    Batcher: otlp
+    TLSEnabled: false          # 生产环境连接 Collector 时设为 true
 ```
 
 ### 常用后端配置
@@ -49,9 +53,19 @@ Telemetry:
 Endpoint: localhost:4317  # OTLP gRPC (推荐)
 ```
 
-**Zipkin** (需要使用 HTTP 导出器):
+**OTLP HTTP Collector**:
 ```yaml
-Endpoint: http://localhost:9411/api/v2/spans
+Endpoint: localhost:4318
+Protocol: http
+```
+
+**生产环境 Collector（TLS + Token）**:
+```yaml
+Endpoint: collector.example.com:4317
+Protocol: grpc
+TLSEnabled: true
+Headers:
+  Authorization: "Bearer <token>"
 ```
 
 **自定义 OTLP Collector**:
@@ -65,7 +79,7 @@ Endpoint: collector.example.com:4317
 
 ```go
 import (
-    "idrm/pkg/telemetry/trace"
+    "github.com/jinguoxing/idrm-go-base/telemetry/trace"
 )
 
 func main() {
@@ -145,16 +159,58 @@ func handleHTTPRequest(ctx context.Context, req *http.Request) {
 
 #### Client Span（调用外部服务）
 
+推荐方式一：使用出站 HTTP 辅助方法（自动创建 Client Span + Inject）：
+
+```go
+func callExternalAPI(ctx context.Context, url string) error {
+    req, span, err := trace.NewOutboundHTTPRequest(ctx, http.MethodGet, url, nil)
+    if err != nil {
+        return err
+    }
+
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        trace.FinishHTTPClient(span, 0, err)
+        return err
+    }
+    defer resp.Body.Close()
+
+    trace.FinishHTTPClient(span, resp.StatusCode, nil)
+    return nil
+}
+```
+
+方式二：手动创建 Client Span：
+
 ```go
 func callExternalAPI(ctx context.Context, url string) error {
     ctx, span := trace.StartClient(ctx, "CallExternalAPI",
         attribute.String("http.url", url),
     )
     defer span.End()
-    
+
+    req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+    trace.InjectHTTP(ctx, req.Header)
     // 发送 HTTP 请求...
     return nil
 }
+```
+
+#### gRPC 服务间调用
+
+客户端（go-zero zrpc 示例）：
+
+```go
+conn := grpc.Dial(target,
+    trace.GRPCClientHandler(),
+    grpc.WithTransportCredentials(insecure.NewCredentials()),
+)
+```
+
+服务端：
+
+```go
+server := grpc.NewServer(trace.GRPCServerHandler())
 ```
 
 #### Consumer/Producer Span（消息队列）
@@ -184,7 +240,23 @@ func consumeMessage(ctx context.Context, msg Message) error {
 }
 ```
 
-### 4. 错误处理
+### 4. 分布式传播
+
+入站 HTTP 请求由 `middleware.Trace()` 自动 Extract。手动场景：
+
+```go
+ctx := trace.ExtractHTTP(r.Context(), r.Header)
+```
+
+出站 HTTP：
+
+```go
+trace.InjectHTTP(ctx, req.Header)
+```
+
+> **注意**：使用中间件前必须先调用 `telemetry.Init()`，否则 Propagator 未注册，Extract/Inject 无效。
+
+### 5. 错误处理
 
 #### 使用 End 辅助方法
 

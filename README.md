@@ -161,6 +161,7 @@ err := telemetry.Init(telemetry.Config{
     Trace: telemetry.TraceConfig{
         Enabled:  true,
         Endpoint: "localhost:4317",
+        Protocol: "grpc",
     },
 })
 ```

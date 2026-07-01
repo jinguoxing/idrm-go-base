@@ -13,8 +13,9 @@ import (
 func Trace() func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			// Create Server Span
-			ctx, span := trace.StartServer(r.Context(), r.URL.Path,
+			// 提取上游 trace context，再创建 Server Span
+			ctx := trace.ExtractHTTP(r.Context(), r.Header)
+			ctx, span := trace.StartServer(ctx, r.URL.Path,
 				attribute.String("http.method", r.Method),
 				attribute.String("http.url", r.URL.String()),
 				attribute.String("http.host", r.Host),

@@ -33,9 +33,11 @@ server.Use(middleware.Logger())     // 5. Request logging
 **顺序说明**：
 1. **Recovery** 必须第一个，捕获后续所有 panic
 2. **RequestID** 第二个，为请求生成唯一ID
-3. **Trace** 第三个，创建 OpenTelemetry Span
+3. **Trace** 第三个，Extract 上游 trace context 并创建 Server Span
 4. **CORS** 处理跨域请求
 5. **Logger** 最后，记录完整请求信息
+
+> **前置条件**：注册 `middleware.Trace()` 前须先调用 `telemetry.Init()`，确保 Propagator 和 TracerProvider 已初始化。
 
 ---
 

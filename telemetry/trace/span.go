@@ -37,6 +37,11 @@ func StartInternal(ctx context.Context) (context.Context, trace.Span) {
 	return ctx, span
 }
 
+// StartInternalSimple 轻量内部 Span，不做 runtime.Caller 调用。
+func StartInternalSimple(ctx context.Context, spanName string) (context.Context, trace.Span) {
+	return Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindInternal))
+}
+
 // StartServer 开始服务端 Span（用于 HTTP/RPC 服务）
 func StartServer(ctx context.Context, spanName string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	ctx, span := Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindServer))
@@ -82,6 +87,11 @@ func End(span trace.Span, err error) {
 		span.SetStatus(codes.Ok, "OK")
 	}
 	span.End()
+}
+
+// EndSpan 从 context 获取 Span 并结束，同时记录错误（如果有）。
+func EndSpan(ctx context.Context, err error) {
+	End(trace.SpanFromContext(ctx), err)
 }
 
 // SetError 设置错误状态

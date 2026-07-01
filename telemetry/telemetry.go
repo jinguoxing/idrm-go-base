@@ -31,7 +31,10 @@ func Init(config Config) error {
 	traceConfig := trace.TraceConfig{
 		Enabled:  config.Trace.Enabled,
 		Endpoint: config.Trace.Endpoint,
+		Protocol: config.Trace.Protocol,
 		Sampler:  config.Trace.Sampler,
+		TLSEnabled: config.Trace.TLSEnabled,
+		Headers:  config.Trace.Headers,
 		Batcher:  config.Trace.Batcher,
 	}
 	if err := trace.Init(traceConfig, config.ServiceName, config.ServiceVersion, config.Environment); err != nil {
