@@ -1,6 +1,7 @@
 package log
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -18,29 +19,29 @@ type LogConfig struct {
 	Path     string
 	KeepDays int
 
+	Rotation         string
+	MaxSize          int
+	MaxBackups       int
+	MaxContentLength uint32
+
 	RemoteEnabled bool
 	RemoteUrl     string
 	RemoteBatch   int
 	RemoteTimeout int
 }
 
-// Init 初始化日志系统
-func Init(config LogConfig, serviceName string) {
-	// 1. 配置 go-zero logx
-	logConf := logx.LogConf{
-		ServiceName: serviceName,
-		Mode:        config.Mode,
-		Level:       config.Level,
-		Path:        config.Path,
-		KeepDays:    config.KeepDays,
-		Compress:    true,
+// SetUp initializes the logging system and returns configuration errors to the caller.
+func SetUp(config LogConfig, serviceName string) error {
+	logConf, err := buildLogConf(config, serviceName)
+	if err != nil {
+		return err
 	}
 
 	if err := logx.SetUp(logConf); err != nil {
-		panic(err)
+		return err
 	}
 
-	// 2. 如果启用远程日志，添加远程 Writer
+	// If remote logging is enabled, retain the writer for callers that use it explicitly.
 	if config.RemoteEnabled && config.RemoteUrl != "" {
 		timeout := time.Duration(config.RemoteTimeout) * time.Second
 		remoteWriter = NewRemoteWriter(
@@ -50,14 +51,56 @@ func Init(config LogConfig, serviceName string) {
 			timeout,
 		)
 
-		// 添加远程 Writer 到 logx
-		// 注意：go-zero logx 需要通过 writer 方式添加
-		// 这里我们使用 logx.AddWriter 的替代方案
 		setupRemoteWriter(remoteWriter)
 	}
 
-	logx.Infof("日志系统初始化完成 [mode=%s, level=%s, remote=%v]",
-		config.Mode, config.Level, config.RemoteEnabled)
+	logx.Infof("日志系统初始化完成 [mode=%s, level=%s, rotation=%s, remote=%v]",
+		config.Mode, config.Level, logConf.Rotation, config.RemoteEnabled)
+	return nil
+}
+
+// Init initializes the logging system and preserves the v0.2.x panic-on-error API.
+// New callers should prefer SetUp so that configuration errors can be handled explicitly.
+func Init(config LogConfig, serviceName string) {
+	if err := SetUp(config, serviceName); err != nil {
+		panic(err)
+	}
+}
+
+func buildLogConf(config LogConfig, serviceName string) (logx.LogConf, error) {
+	rotation := config.Rotation
+	if rotation == "" {
+		rotation = "daily"
+	}
+
+	if rotation != "daily" && rotation != "size" {
+		return logx.LogConf{}, fmt.Errorf("invalid log rotation %q: must be daily or size", rotation)
+	}
+	if config.MaxSize < 0 {
+		return logx.LogConf{}, fmt.Errorf("invalid log max size %d: must not be negative", config.MaxSize)
+	}
+	if config.MaxBackups < 0 {
+		return logx.LogConf{}, fmt.Errorf("invalid log max backups %d: must not be negative", config.MaxBackups)
+	}
+	if rotation == "size" && config.MaxSize == 0 {
+		return logx.LogConf{}, fmt.Errorf("log max size must be greater than zero when rotation is size")
+	}
+	if (config.Mode == "file" || config.Mode == "volume") && config.Path == "" {
+		return logx.LogConf{}, fmt.Errorf("log path must not be empty when mode is %s", config.Mode)
+	}
+
+	return logx.LogConf{
+		ServiceName:      serviceName,
+		Mode:             config.Mode,
+		Level:            config.Level,
+		Path:             config.Path,
+		KeepDays:         config.KeepDays,
+		Compress:         true,
+		Rotation:         rotation,
+		MaxSize:          config.MaxSize,
+		MaxBackups:       config.MaxBackups,
+		MaxContentLength: config.MaxContentLength,
+	}, nil
 }
 
 // setupRemoteWriter 设置远程日志写入器

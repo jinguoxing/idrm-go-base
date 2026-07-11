@@ -7,8 +7,10 @@
 ## ✨ 功能特性
 
 - ✅ **本地日志**：基于 go-zero logx，支持文件/控制台输出
+- ✅ **按大小切分**：支持按天或按大小切分，并设置备份保留数
+- ✅ **字符串内容截取**：可限制单条 string 主内容的字节长度
 - ✅ **远程日志**：自定义 Writer，批量异步上报
-- ✅ **日志级别**：trace/debug/info/warn/error/fatal
+- ✅ **日志级别**：debug/info/error/severe
 - ✅ **自动刷新**：每3秒或达到批量大小自动发送
 - ✅ **故障容错**：远程发送失败不影响本地日志
 - ✅ **优雅关闭**：确保所有日志发送完成
@@ -23,6 +25,12 @@ type LogConfig struct {
     Mode     string // 输出模式：console/file
     Path     string // 日志文件路径
     KeepDays int    // 保留天数
+
+    // 文件切分与内容截取
+    Rotation         string // daily（默认）或 size
+    MaxSize          int    // 单个日志文件上限（MB），仅 Rotation=size 生效
+    MaxBackups       int    // 每类日志保留的备份数，0=不限
+    MaxContentLength uint32 // string 主内容上限（字节），0=不截取
 
     // 远程日志
     RemoteEnabled bool   // 是否启用远程上报
@@ -45,11 +53,19 @@ Telemetry:
     Mode: file
     Path: logs
     KeepDays: 7
+    Rotation: size
+    MaxSize: 100
+    MaxBackups: 30
+    MaxContentLength: 65536
     RemoteEnabled: true
     RemoteUrl: http://log-collector:8080/api/logs
     RemoteBatch: 100
     RemoteTimeout: 5
 ```
+
+`Rotation=size` 时必须设置大于 0 的 `MaxSize`。`MaxBackups` 按 access/error/severe/slow/stat 等日志类别分别计算，`KeepDays` 只限制保留时间，不是总容量上限。
+
+`MaxContentLength` 仅截取 Go 类型为 `string` 的日志主内容，不截取结构化 fields、error 或对象，也不限制最终 JSON 日志行的总长度。超限时 go-zero 会写入 `"truncated":true`。它对 console/file/volume 模式都生效，按字节截取可能在 UTF-8 多字节字符中间切断。
 
 ## 🚀 使用方法
 
@@ -57,12 +73,14 @@ Telemetry:
 
 ```go
 import (
-    "idrm/pkg/telemetry/log"
+    "github.com/jinguoxing/idrm-go-base/telemetry/log"
 )
 
 func main() {
     // 初始化日志系统
-    log.Init(config.Telemetry.Log, config.Telemetry.ServiceName)
+    if err := log.SetUp(config.Telemetry.Log, config.Telemetry.ServiceName); err != nil {
+        panic(err)
+    }
     defer log.Close()
     
     // 业务代码...
@@ -174,7 +192,7 @@ package main
 import (
     "context"
     "idrm/api/internal/config"
-    "idrm/pkg/telemetry/log"
+    "github.com/jinguoxing/idrm-go-base/telemetry/log"
     
     "github.com/zeromicro/go-zero/core/conf"
     "github.com/zeromicro/go-zero/core/logx"
@@ -186,7 +204,9 @@ func main() {
     conf.MustLoad("etc/api.yaml", &c)
     
     // 2. 初始化日志
-    log.Init(c.Telemetry.Log, c.Telemetry.ServiceName)
+    if err := log.SetUp(c.Telemetry.Log, c.Telemetry.ServiceName); err != nil {
+        panic(err)
+    }
     defer log.Close()
     
     // 3. 使用日志

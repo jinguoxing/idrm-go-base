@@ -19,10 +19,19 @@ type Config struct {
 
 // LogConfig 日志配置
 type LogConfig struct {
-	Level    string `json:",default=info"` // trace/debug/info/warn/error/fatal
+	Level    string `json:",default=info"` // debug/info/error/severe
 	Mode     string `json:",default=file"` // console/file/volume
 	Path     string `json:",default=logs"`
 	KeepDays int    `json:",default=7"`
+
+	// Rotation controls how file/volume logs are rotated: daily or size.
+	Rotation string `json:",default=daily,options=[daily,size]"`
+	// MaxSize is the size limit in MB for a single log file when Rotation is size.
+	MaxSize int `json:",default=0"`
+	// MaxBackups is the number of rotated files retained per log category when Rotation is size.
+	MaxBackups int `json:",default=0"`
+	// MaxContentLength limits the byte length of string log content. Zero means no limit.
+	MaxContentLength uint32 `json:",optional"`
 
 	// 远程日志上报
 	RemoteEnabled bool   `json:",default=false"`

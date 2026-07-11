@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jinguoxing/idrm-go-base/telemetry/audit"
 	"github.com/jinguoxing/idrm-go-base/telemetry/log"
@@ -13,17 +14,9 @@ import (
 // Init 初始化 Telemetry 系统（一站式初始化）
 func Init(config Config) error {
 	// 1. 初始化日志系统
-	logConfig := log.LogConfig{
-		Level:         config.Log.Level,
-		Mode:          config.Log.Mode,
-		Path:          config.Log.Path,
-		KeepDays:      config.Log.KeepDays,
-		RemoteEnabled: config.Log.RemoteEnabled,
-		RemoteUrl:     config.Log.RemoteUrl,
-		RemoteBatch:   config.Log.RemoteBatch,
-		RemoteTimeout: config.Log.RemoteTimeout,
+	if err := log.SetUp(toLogConfig(config), config.ServiceName); err != nil {
+		return fmt.Errorf("init log: %w", err)
 	}
-	log.Init(logConfig, config.ServiceName)
 	logx.Infof("Telemetry 初始化: %s v%s (%s)",
 		config.ServiceName, config.ServiceVersion, config.Environment)
 
@@ -49,6 +42,23 @@ func Init(config Config) error {
 
 	logx.Info("Telemetry 系统初始化完成")
 	return nil
+}
+
+func toLogConfig(config Config) log.LogConfig {
+	return log.LogConfig{
+		Level:            config.Log.Level,
+		Mode:             config.Log.Mode,
+		Path:             config.Log.Path,
+		KeepDays:         config.Log.KeepDays,
+		Rotation:         config.Log.Rotation,
+		MaxSize:          config.Log.MaxSize,
+		MaxBackups:       config.Log.MaxBackups,
+		MaxContentLength: config.Log.MaxContentLength,
+		RemoteEnabled:    config.Log.RemoteEnabled,
+		RemoteUrl:        config.Log.RemoteUrl,
+		RemoteBatch:      config.Log.RemoteBatch,
+		RemoteTimeout:    config.Log.RemoteTimeout,
+	}
 }
 
 // Close 关闭 Telemetry 系统
