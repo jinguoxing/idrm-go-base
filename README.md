@@ -154,9 +154,13 @@ err := telemetry.Init(telemetry.Config{
     ServiceVersion: "1.0.0",
     Environment:    "production",
     Log: telemetry.LogConfig{
-        Level: "info",
-        Mode:  "file",
-        Path:  "logs",
+        Level:      "info",
+        Mode:       "file",
+        Path:       "logs",
+        KeepDays:   7,
+        Rotation:   "daily", // 兼容默认；size 时必须指定 MaxSize
+        MaxSize:    0,       // 单位 MB；0 表示不按大小切分
+        MaxBackups: 0,       // 0 表示不限制每类备份数
     },
     Trace: telemetry.TraceConfig{
         Enabled:  true,
@@ -164,6 +168,11 @@ err := telemetry.Init(telemetry.Config{
     },
 })
 ```
+
+日志配置支持以下统一环境变量：`LOG_MODE`、`LOG_PATH`、`LOG_KEEP_DAYS`、
+`LOG_ROTATION`、`LOG_MAX_SIZE_MB`、`LOG_MAX_BACKUPS`、
+`LOG_MAX_CONTENT_LENGTH`。完整的“兼容默认”和“显式启用按大小切分”YAML
+示例见 [telemetry 配置说明](telemetry/README.md#日志切分与截取策略)。
 
 ### uuid 模块
 

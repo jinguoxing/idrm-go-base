@@ -57,6 +57,11 @@ Telemetry:
     Mode: file
     Path: logs
     KeepDays: 7
+    # 兼容默认：按天切分，不按大小/数量/内容截取
+    Rotation: ${LOG_ROTATION:-daily}
+    MaxSize: ${LOG_MAX_SIZE_MB:-0}
+    MaxBackups: ${LOG_MAX_BACKUPS:-0}
+    MaxContentLength: ${LOG_MAX_CONTENT_LENGTH:-0}
     RemoteEnabled: true
     RemoteUrl: http://log-collector:8080/api/logs
     RemoteBatch: 100
@@ -75,6 +80,43 @@ Telemetry:
     Url: http://audit-service:8080/api/audit
     Buffer: 100
 ```
+
+### 日志切分与截取策略
+
+以下环境变量用于日志配置：`LOG_MODE`、`LOG_PATH`、`LOG_KEEP_DAYS`、
+`LOG_ROTATION`、`LOG_MAX_SIZE_MB`、`LOG_MAX_BACKUPS` 和
+`LOG_MAX_CONTENT_LENGTH`。它们的含义与 `LogConfig` 同名字段一致；大小以 MB
+为单位，内容长度以字节为单位。
+
+兼容升级时保持原有行为，推荐显式使用这一组默认值：
+
+```yaml
+Log:
+  Mode: ${LOG_MODE:-file}
+  Path: ${LOG_PATH:-logs}
+  KeepDays: ${LOG_KEEP_DAYS:-7}
+  Rotation: ${LOG_ROTATION:-daily}
+  MaxSize: ${LOG_MAX_SIZE_MB:-0}
+  MaxBackups: ${LOG_MAX_BACKUPS:-0}
+  MaxContentLength: ${LOG_MAX_CONTENT_LENGTH:-0}
+```
+
+需要限制文件大小的部署可显式启用按大小切分：
+
+```yaml
+Log:
+  Mode: ${LOG_MODE:-file}
+  Path: ${LOG_PATH:-logs}
+  KeepDays: ${LOG_KEEP_DAYS:-7}
+  Rotation: ${LOG_ROTATION:-size}
+  MaxSize: ${LOG_MAX_SIZE_MB:-100}
+  MaxBackups: ${LOG_MAX_BACKUPS:-30}
+  MaxContentLength: ${LOG_MAX_CONTENT_LENGTH:-65536}
+```
+
+`Rotation=size` 必须配合大于零的 `MaxSize`。`MaxBackups=0` 和
+`MaxContentLength=0` 分别表示不限制备份数量和不截取 string 主内容；
+`KeepDays` 仍按时间清理历史文件，并不是容量上限。
 
 ### Config 结构定义
 

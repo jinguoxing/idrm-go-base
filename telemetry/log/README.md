@@ -40,27 +40,34 @@ type LogConfig struct {
 }
 ```
 
-### 配置示例
+### 兼容默认
+
+不设置新增字段时，日志行为保持兼容：按天切分，不按文件大小、备份数量或主内容长度限制。
 
 ```yaml
-# api/etc/api.yaml
-Telemetry:
-  ServiceName: idrm-api
-  ServiceVersion: 1.0.0
-  
-  Log:
-    Level: info
-    Mode: file
-    Path: logs
-    KeepDays: 7
-    Rotation: size
-    MaxSize: 100
-    MaxBackups: 30
-    MaxContentLength: 65536
-    RemoteEnabled: true
-    RemoteUrl: http://log-collector:8080/api/logs
-    RemoteBatch: 100
-    RemoteTimeout: 5
+Log:
+  Level: ${LOG_LEVEL:-info}
+  Mode: ${LOG_MODE:-file}
+  Path: ${LOG_PATH:-logs}
+  KeepDays: ${LOG_KEEP_DAYS:-7}
+  Rotation: ${LOG_ROTATION:-daily}
+  MaxSize: ${LOG_MAX_SIZE_MB:-0}
+  MaxBackups: ${LOG_MAX_BACKUPS:-0}
+  MaxContentLength: ${LOG_MAX_CONTENT_LENGTH:-0}
+```
+
+### 显式启用按大小切分
+
+```yaml
+Log:
+  Level: ${LOG_LEVEL:-info}
+  Mode: ${LOG_MODE:-file}
+  Path: ${LOG_PATH:-logs}
+  KeepDays: ${LOG_KEEP_DAYS:-7}
+  Rotation: ${LOG_ROTATION:-size}
+  MaxSize: ${LOG_MAX_SIZE_MB:-100}
+  MaxBackups: ${LOG_MAX_BACKUPS:-30}
+  MaxContentLength: ${LOG_MAX_CONTENT_LENGTH:-65536}
 ```
 
 `Rotation=size` 时必须设置大于 0 的 `MaxSize`。`MaxBackups` 按 access/error/severe/slow/stat 等日志类别分别计算，`KeepDays` 只限制保留时间，不是总容量上限。
