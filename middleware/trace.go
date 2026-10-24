@@ -61,6 +61,14 @@ func (w *traceStatusWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
+// Flush implements the Flusher interface so Server-Sent Event responses keep
+// streaming through this wrapper instead of failing the handler's flush check.
+func (w *traceStatusWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 // getScheme determines HTTP or HTTPS
 func getScheme(r *http.Request) string {
 	if r.TLS != nil {
