@@ -20,10 +20,11 @@ func New(serviceName, version, environment string) (*resource.Resource, error) {
 	}
 	hostname, _ := os.Hostname()
 
+	// Leave the schema URL empty. resource.Default() carries the SDK's schema,
+	// and Merge fails when both sides set a different non-empty schema URL.
 	return resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+		resource.NewSchemaless(
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(version),
 			semconv.DeploymentEnvironment(environment),
